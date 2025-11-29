@@ -1,6 +1,6 @@
 """
-Main Telegram bot application.
-Handles user commands and orchestrates X API and content generation.
+Main Telegram bot application - Trending Topics Workflow.
+Handles user commands and orchestrates Reddit trending, web research, and X posting.
 """
 
 import logging
@@ -15,6 +15,8 @@ from telegram.constants import ParseMode
 
 from config import Config
 from models import BotState
+from reddit_client import RedditClient
+from research_client import ResearchClient
 from x_client import XClient
 from content_generator import ContentGenerator
 
@@ -29,7 +31,9 @@ logger = logging.getLogger(__name__)
 bot_state = BotState()
 
 # Initialize clients
-x_client = XClient()
+reddit_client = RedditClient()  # For trending topics
+research_client = ResearchClient()  # For web research
+x_client = XClient()  # For posting tweets
 content_gen = ContentGenerator()
 
 
@@ -42,97 +46,90 @@ def is_authorized_user(user_id: int) -> bool:
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command."""
     user_id = update.effective_user.id
+    username = update.effective_user.username or "Unknown"
+    
+    # Log all incoming requests for debugging
+    logger.info(f"📱 /start command from user_id={user_id}, username=@{username}")
+    print(f"📱 /start command from user_id={user_id}, username=@{username}")
     
     if not is_authorized_user(user_id):
+        logger.warning(f"❌ Unauthorized access attempt from user_id={user_id}")
+        print(f"❌ Unauthorized access attempt from user_id={user_id}")
+        print(f"💡 Expected user_id={Config.TELEGRAM_USER_ID}")
         await update.message.reply_text(
-            "❌ Unauthorized. This bot is for private use only."
+            f"❌ Unauthorized. This bot is for private use only.\\n\\n"
+            f"Your user ID: {user_id}\\n"
+            f"Expected user ID: {Config.TELEGRAM_USER_ID}\\n\\n"
+            f"💡 Update TELEGRAM_USER_ID in your .env file to {user_id} to authorize yourself."
         )
         return
     
     welcome_message = """
 🤖 **Welcome to Telegram X Bot!**
 
-This bot helps you analyze trending Farsi hashtags on X (Twitter) and generate AI-powered post proposals.
+This bot helps you discover trending topics, research them, and create AI-powered X posts.
 
-**Available Commands:**
+**Workflow:**
 
-📊 `/search #hashtag` - Search for a Farsi hashtag and view top 10 posts
-   Example: `/search #ایران`
+1️⃣ `/trending` - Discover top 10 trending topics on Reddit
 
-🤖 `/propose` - Generate AI post proposal based on last search
+2️⃣ `/research 3` - Research topic #3 on the web (LLM does deep research)
 
-✅ `/approve` - Post the proposed content to X
+3️⃣ `/propose` - LLM writes an X post based on research
 
+4️⃣ `/approve` - Post to X
+
+**Other Commands:**
 ❌ `/cancel` - Cancel current operation
 
-**How it works:**
-1. Search for a hashtag to see top posts
-2. Generate a proposal based on those posts
-3. Review and approve to post to X
-
-Let's get started! 🚀
+Let's discover what's trending! 🚀
 """
     
     await update.message.reply_text(welcome_message, parse_mode=ParseMode.MARKDOWN)
 
 
-async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /search command."""
+async def trending_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /trending command to show trending topics."""
     user_id = update.effective_user.id
     
     if not is_authorized_user(user_id):
         await update.message.reply_text("❌ Unauthorized.")
         return
     
-    # Get hashtag from command arguments
-    if not context.args:
-        await update.message.reply_text(
-            "❌ Please provide a hashtag.\n"
-            "Usage: `/search #hashtag`\n"
-            "Example: `/search #ایران`",
-            parse_mode=ParseMode.MARKDOWN
-        )
-        return
-    
-    hashtag = context.args[0]
-    
-    # Send "searching" message
+    # Send "fetching" message
     status_msg = await update.message.reply_text(
-        f"🔍 Searching for top posts with {hashtag}...\n"
+        "🔥 Fetching trending topics from Reddit...\\n"
         "This may take a moment..."
     )
     
     try:
-        # Search for top posts
-        posts = x_client.get_top_posts(hashtag, limit=10)
+        # Fetch trending topics
+        topics = reddit_client.get_trending_topics(limit=10)
         
-        if not posts:
+        if not topics:
             await status_msg.edit_text(
-                f"❌ No posts found for {hashtag}\n"
-                "Try a different hashtag or check if it's spelled correctly."
+                "❌ No trending topics found.\\n"
+                "Please try again later."
             )
             return
         
-        # Store results in bot state
-        bot_state.set_search_results(hashtag, posts)
+        # Store topics in bot state
+        bot_state.set_trending_topics(topics)
         
         # Format results for display
-        results_message = f"📊 **Top 10 Posts for {hashtag}**\n\n"
+        results_message = "🔥 **Top 10 Trending Topics on Reddit**\\n\\n"
         
-        for i, post in enumerate(posts, 1):
-            # Truncate long posts
-            text = post.text[:150] + "..." if len(post.text) > 150 else post.text
+        for i, topic in enumerate(topics, 1):
+            title = topic['title'][:100] + "..." if len(topic['title']) > 100 else topic['title']
             results_message += (
-                f"**{i}. @{post.author}**\n"
-                f"{text}\n"
-                f"❤️ {post.likes} | 🔄 {post.retweets} | 💬 {post.replies}\n"
-                f"[View Post]({post.url})\n\n"
+                f"**{i}. {title}**\\n"
+                f"📂 r/{topic['subreddit']} | 👍 {topic['score']:,} | 💬 {topic['comments']}\\n\\n"
             )
         
         results_message += (
-            "━━━━━━━━━━━━━━━━━━━━\n"
-            f"✅ Found {len(posts)} posts\n\n"
-            "💡 Use `/propose` to generate an AI post based on these results!"
+            "━━━━━━━━━━━━━━━━━━━━\\n"
+            f"✅ Found {len(topics)} trending topics\\n\\n"
+            "💡 Use `/research 3` to research topic #3!"
         )
         
         # Delete status message and send results
@@ -144,36 +141,125 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         
     except Exception as e:
-        logger.error(f"Error in search_command: {e}")
+        logger.error(f"Error in trending_command: {e}")
         await status_msg.edit_text(
-            f"❌ Error searching for posts: {str(e)}\n\n"
-            "Please check:\n"
-            "• X API credentials are correct\n"
-            "• You haven't exceeded rate limits\n"
-            "• The hashtag is valid"
+            f"❌ Error fetching trending topics: {str(e)}\\n\\n"
+            "Please try again later."
         )
 
 
-async def propose_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /propose command."""
+async def research_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /research command for web research on selected topic."""
     user_id = update.effective_user.id
     
     if not is_authorized_user(user_id):
         await update.message.reply_text("❌ Unauthorized.")
         return
     
-    # Check if there are search results
-    if not bot_state.has_search_results():
+    # Check if there are trending topics
+    if not bot_state.has_trending_topics():
         await update.message.reply_text(
-            "❌ No search results available.\n"
-            "Please use `/search #hashtag` first!",
+            "❌ No trending topics available.\\n"
+            "Please use `/trending` first!",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return
+    
+    # Get topic number from command arguments
+    if not context.args or not context.args[0].isdigit():
+        await update.message.reply_text(
+            "❌ Please provide a topic number.\\n"
+            "Usage: `/research 3`\\n"
+            "Example: `/research 1`",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return
+    
+    topic_num = int(context.args[0])
+    
+    # Select the topic
+    selected_topic = bot_state.select_topic(topic_num)
+    
+    if not selected_topic:
+        await update.message.reply_text(
+            f"❌ Invalid topic number. Please choose between 1 and {len(bot_state.trending_topics)}."
+        )
+        return
+    
+    # Send "researching" message
+    status_msg = await update.message.reply_text(
+        f"🔬 Researching topic #{topic_num}: '{selected_topic['title'][:50]}...'\\n"
+        "LLM is gathering information from the web..."
+    )
+    
+    try:
+        # Perform web research
+        results = research_client.search_topic(selected_topic['title'], max_results=5)
+        
+        if not results:
+            await status_msg.edit_text(
+                f"❌ No research results found for this topic.\\n"
+                "Try a different topic."
+            )
+            return
+        
+        # Store research results
+        bot_state.set_research_results(results)
+        
+        # Format research summary
+        summary = f"🔬 **Research: {selected_topic['title'][:80]}**\\n\\n"
+        
+        for i, result in enumerate(results, 1):
+            title = result['title'][:80]
+            snippet = result['snippet'][:120] + "..." if len(result['snippet']) > 120 else result['snippet']
+            summary += (
+                f"**{i}. {title}**\\n"
+                f"{snippet}\\n"
+                f"🔗 [Read more]({result['url']})\\n\\n"
+            )
+        
+        summary += (
+            "━━━━━━━━━━━━━━━━━━━━\\n"
+            f"✅ Found {len(results)} research sources\\n\\n"
+            "💡 Use `/propose` to generate an X post from this research!"
+        )
+        
+        # Delete status message and send results
+        await status_msg.delete()
+        await update.message.reply_text(
+            summary,
+            parse_mode=ParseMode.MARKDOWN,
+            disable_web_page_preview=True
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in research_command: {e}")
+        await status_msg.edit_text(
+            f"❌ Error performing research: {str(e)}\\n\\n"
+            "Please try again."
+        )
+
+
+async def propose_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /propose command to generate X post from research."""
+    user_id = update.effective_user.id
+    
+    if not is_authorized_user(user_id):
+        await update.message.reply_text("❌ Unauthorized.")
+        return
+    
+    # Check if there are research results
+    if not bot_state.has_research_results():
+        await update.message.reply_text(
+            "❌ No research results available.\\n"
+            "Please use `/research [number]` first!",
             parse_mode=ParseMode.MARKDOWN
         )
         return
     
     # Send "generating" message
     status_msg = await update.message.reply_text(
-        "🤖 Generating AI-powered post proposal...\n"
+        "🤖 LLM is writing an X post based on research...\\n"
         "This may take a moment..."
     )
     
@@ -181,19 +267,19 @@ async def propose_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Check Ollama connection
         if not content_gen.test_connection():
             await status_msg.edit_text(
-                "❌ Cannot connect to Ollama.\n\n"
-                "Please make sure Ollama is running:\n"
-                "1. Install from https://ollama.ai\n"
-                f"2. Run: `ollama pull {Config.OLLAMA_MODEL}`\n"
+                "❌ Cannot connect to Ollama.\\n\\n"
+                "Please make sure Ollama is running:\\n"
+                "1. Install from https://ollama.ai\\n"
+                f"2. Run: `ollama pull {Config.OLLAMA_MODEL}`\\n"
                 "3. Ollama should be running in the background",
                 parse_mode=ParseMode.MARKDOWN
             )
             return
         
-        # Generate proposal
-        proposal = content_gen.generate_post_proposal(
-            bot_state.last_search_results,
-            bot_state.last_search_hashtag
+        # Generate proposal from research
+        proposal = content_gen.generate_from_research(
+            bot_state.selected_topic['title'],
+            bot_state.research_results
         )
         
         # Store proposal
@@ -201,13 +287,12 @@ async def propose_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Format proposal message
         proposal_message = (
-            "🤖 **AI-Generated Post Proposal**\n\n"
-            f"📝 {proposal.content}\n\n"
-            "━━━━━━━━━━━━━━━━━━━━\n"
-            f"📊 Based on: {proposal.hashtag}\n"
-            f"📈 Analyzed {len(proposal.based_on_posts)} top posts\n"
-            f"📏 Length: {len(proposal.content)} characters\n\n"
-            "✅ Use `/approve` to post this to X\n"
+            "🤖 **AI-Generated X Post**\\n\\n"
+            f"📝 {proposal.content}\\n\\n"
+            "━━━━━━━━━━━━━━━━━━━━\\n"
+            f"📊 Based on: {bot_state.selected_topic['title'][:60]}...\\n"
+            f"📏 Length: {len(proposal.content)} characters\\n\\n"
+            "✅ Use `/approve` to post this to X\\n"
             "❌ Use `/cancel` to discard"
         )
         
@@ -221,17 +306,17 @@ async def propose_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Error in propose_command: {e}")
         await status_msg.edit_text(
-            f"❌ Error generating proposal: {str(e)}\n\n"
-            "Please check:\n"
-            "• Ollama is running\n"
-            f"• Model '{Config.OLLAMA_MODEL}' is installed\n"
+            f"❌ Error generating proposal: {str(e)}\\n\\n"
+            "Please check:\\n"
+            "• Ollama is running\\n"
+            f"• Model '{Config.OLLAMA_MODEL}' is installed\\n"
             "• Try running: `ollama pull {Config.OLLAMA_MODEL}`",
             parse_mode=ParseMode.MARKDOWN
         )
 
 
 async def approve_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /approve command."""
+    """Handle /approve command to post to X."""
     user_id = update.effective_user.id
     
     if not is_authorized_user(user_id):
@@ -241,7 +326,7 @@ async def approve_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check if there's a proposal
     if not bot_state.has_proposal():
         await update.message.reply_text(
-            "❌ No proposal to approve.\n"
+            "❌ No proposal to approve.\\n"
             "Please use `/propose` first!",
             parse_mode=ParseMode.MARKDOWN
         )
@@ -249,7 +334,7 @@ async def approve_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Send "posting" message
     status_msg = await update.message.reply_text(
-        "📤 Posting to X...\n"
+        "📤 Posting to X...\\n"
         "Please wait..."
     )
     
@@ -263,10 +348,10 @@ async def approve_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Success message
         tweet_url = f"https://twitter.com/i/web/status/{tweet_id}"
         success_message = (
-            "✅ **Successfully posted to X!**\n\n"
-            f"📝 {bot_state.current_proposal.content if bot_state.current_proposal else 'Posted'}\n\n"
-            f"🔗 [View on X]({tweet_url})\n\n"
-            "🎉 Great job! Use `/search` to find more trends."
+            "✅ **Successfully posted to X!**\\n\\n"
+            f"📝 {bot_state.current_proposal.content if bot_state.current_proposal else 'Posted'}\\n\\n"
+            f"🔗 [View on X]({tweet_url})\\n\\n"
+            "🎉 Great job! Use `/trending` to discover more topics."
         )
         
         await status_msg.edit_text(
@@ -278,10 +363,10 @@ async def approve_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Error in approve_command: {e}")
         await status_msg.edit_text(
-            f"❌ Error posting to X: {str(e)}\n\n"
-            "Please check:\n"
-            "• X API credentials have write permissions\n"
-            "• You haven't exceeded posting limits (500/month)\n"
+            f"❌ Error posting to X: {str(e)}\\n\\n"
+            "Please check:\\n"
+            "• X API credentials have write permissions\\n"
+            "• You haven't exceeded posting limits (500/month)\\n"
             "• The content meets X's guidelines"
         )
 
@@ -297,13 +382,13 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if bot_state.has_proposal():
         bot_state.clear_proposal()
         await update.message.reply_text(
-            "❌ Proposal discarded.\n\n"
-            "Use `/search` to start over or `/propose` to generate a new proposal."
+            "❌ Proposal discarded.\\n\\n"
+            "Use `/trending` to start over or `/propose` to generate a new proposal."
         )
     else:
         await update.message.reply_text(
-            "ℹ️ Nothing to cancel.\n\n"
-            "Use `/search #hashtag` to get started!"
+            "ℹ️ Nothing to cancel.\\n\\n"
+            "Use `/trending` to get started!"
         )
 
 
@@ -323,13 +408,14 @@ def main():
     
     # Add command handlers
     application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("search", search_command))
+    application.add_handler(CommandHandler("trending", trending_command))
+    application.add_handler(CommandHandler("research", research_command))
     application.add_handler(CommandHandler("propose", propose_command))
     application.add_handler(CommandHandler("approve", approve_command))
     application.add_handler(CommandHandler("cancel", cancel_command))
     
     # Start the bot
-    print("\n✅ Bot is running! Press Ctrl+C to stop.\n")
+    print("\\n✅ Bot is running! Press Ctrl+C to stop.\\n")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 

@@ -39,7 +39,7 @@ class ContentGenerator:
     
     def generate_post_proposal(self, posts: List[Post], hashtag: str) -> ProposedPost:
         """
-        Generate an engaging Farsi post based on trending posts.
+        Generate an engaging English post based on trending posts.
         
         Args:
             posts: List of top posts to base the proposal on
@@ -55,20 +55,21 @@ class ContentGenerator:
         trends_summary = self.analyze_trends(posts)
         
         # Create prompt for Ollama
-        prompt = f"""You are a social media expert creating engaging Persian/Farsi tweets.
+        prompt = f"""You are a social media expert creating engaging tweets for X (Twitter).
 
 Based on these top trending posts about {hashtag}:
 
 {trends_summary}
 
-Create ONE engaging Persian/Farsi tweet that:
+Create ONE engaging tweet in ENGLISH that:
 1. Reflects the main themes and topics from these posts
-2. Is culturally relevant and engaging for Persian speakers
+2. Is engaging and shareable
 3. Is MAXIMUM 280 characters (very important!)
 4. Includes the hashtag {hashtag}
 5. Is original and creative, not a copy
+6. Uses a conversational, authentic tone
 
-IMPORTANT: Respond ONLY with the tweet text in Persian/Farsi. No explanations, no English, just the tweet.
+IMPORTANT: Respond ONLY with the tweet text in English. No explanations, no extra text, just the tweet.
 """
         
         # Call Ollama API
@@ -97,6 +98,80 @@ IMPORTANT: Respond ONLY with the tweet text in Persian/Farsi. No explanations, n
                 content=generated_text,
                 hashtag=hashtag,
                 based_on_posts=posts
+            )
+            
+            return proposal
+        
+        except requests.exceptions.RequestException as e:
+            print(f"❌ Error calling Ollama API: {e}")
+            raise Exception(f"Failed to generate content. Is Ollama running? Error: {e}")
+    
+    def generate_from_research(self, topic: str, research_results: list) -> ProposedPost:
+        """
+        Generate an engaging X post based on web research results.
+        
+        Args:
+            topic: The topic being researched
+            research_results: List of research results from web search
+        
+        Returns:
+            ProposedPost object with generated content
+        """
+        if not research_results:
+            raise ValueError("No research results provided for content generation")
+        
+        # Format research results for the prompt
+        research_summary = "\n\n".join([
+            f"Source {i+1}: {result['title']}\n{result['snippet']}"
+            for i, result in enumerate(research_results[:5])
+        ])
+        
+        # Create prompt for Ollama
+        prompt = f"""You are a social media expert creating engaging tweets for X (Twitter).
+
+Topic: {topic}
+
+Based on this research from the web:
+
+{research_summary}
+
+Create ONE engaging tweet in ENGLISH that:
+1. Captures the key insights from the research
+2. Is informative and shareable
+3. Is MAXIMUM 280 characters (very important!)
+4. Uses a conversational, authentic tone
+5. Includes relevant context or a compelling angle
+6. Is original and creative
+
+IMPORTANT: Respond ONLY with the tweet text in English. No explanations, no extra text, just the tweet.
+"""
+        
+        # Call Ollama API
+        try:
+            response = requests.post(
+                self.api_url,
+                json={
+                    "model": self.model,
+                    "prompt": prompt,
+                    "stream": False
+                },
+                timeout=60
+            )
+            response.raise_for_status()
+            
+            result = response.json()
+            generated_text = result.get('response', '').strip()
+            
+            # Ensure it's within character limit
+            if len(generated_text) > 280:
+                # Truncate and add ellipsis
+                generated_text = generated_text[:277] + "..."
+            
+            # Create ProposedPost
+            proposal = ProposedPost(
+                content=generated_text,
+                hashtag=topic,
+                based_on_posts=[]  # No posts, based on research
             )
             
             return proposal

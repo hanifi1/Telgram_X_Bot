@@ -52,18 +52,31 @@ class ProposedPost:
         )
 
 
+
+
 class BotState:
-    """Manages bot state for a single user session."""
+    """Manages bot state for trending topics workflow."""
     
     def __init__(self):
-        self.last_search_hashtag: Optional[str] = None
-        self.last_search_results: list[Post] = []
+        self.trending_topics: list = []  # List of trending topics from Reddit
+        self.selected_topic: Optional[dict] = None  # Currently selected topic
+        self.research_results: list = []  # Web research results
         self.current_proposal: Optional[ProposedPost] = None
     
-    def set_search_results(self, hashtag: str, posts: list[Post]):
-        """Store search results."""
-        self.last_search_hashtag = hashtag
-        self.last_search_results = posts
+    def set_trending_topics(self, topics: list):
+        """Store trending topics."""
+        self.trending_topics = topics
+    
+    def select_topic(self, topic_number: int) -> Optional[dict]:
+        """Select a topic by number (1-indexed)."""
+        if 1 <= topic_number <= len(self.trending_topics):
+            self.selected_topic = self.trending_topics[topic_number - 1]
+            return self.selected_topic
+        return None
+    
+    def set_research_results(self, results: list):
+        """Store research results."""
+        self.research_results = results
     
     def set_proposal(self, proposal: ProposedPost):
         """Store current proposal."""
@@ -73,9 +86,17 @@ class BotState:
         """Clear current proposal."""
         self.current_proposal = None
     
-    def has_search_results(self) -> bool:
-        """Check if there are search results available."""
-        return bool(self.last_search_results)
+    def has_trending_topics(self) -> bool:
+        """Check if there are trending topics available."""
+        return bool(self.trending_topics)
+    
+    def has_selected_topic(self) -> bool:
+        """Check if a topic has been selected."""
+        return self.selected_topic is not None
+    
+    def has_research_results(self) -> bool:
+        """Check if there are research results available."""
+        return bool(self.research_results)
     
     def has_proposal(self) -> bool:
         """Check if there is a proposal awaiting approval."""
