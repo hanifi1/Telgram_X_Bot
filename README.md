@@ -1,15 +1,19 @@
 # Telegram X Bot 🤖
 
-A Telegram bot that analyzes trending Farsi hashtags on X (Twitter), displays top posts by engagement, and generates AI-powered post proposals using local LLM (Ollama). Completely free to operate!
+A Telegram bot that discovers trending topics on Reddit, researches them on the web, and generates AI-powered X posts using local LLM (Ollama). Completely free to operate!
+
+## Workflow 🔄
+
+![Bot Workflow](workflow.png)
 
 ## Features ✨
 
-- 🔍 **Hashtag Search**: Search any Farsi hashtag and view top 10 posts ranked by engagement
-- 📊 **Engagement Metrics**: See likes, retweets, and replies for each post
-- 🤖 **AI Content Generation**: Generate culturally relevant Farsi posts using local LLM (Ollama)
+- � **Trending Discovery**: Find top 10 trending posts about any topic on Reddit
+- � **Web Research**: LLM researches selected topics using DuckDuckGo search
+- 🤖 **AI Content Generation**: Generate engaging X posts using local LLM (Ollama)
 - ✅ **One-Click Posting**: Review and approve AI-generated posts to publish on X
 - 🔒 **Single-User**: Secure, personal bot with user authentication
-- 💰 **100% Free**: Uses free tier APIs and local LLM (no API costs)
+- 💰 **100% Free**: Uses free APIs and local LLM (no API costs)
 
 ## Prerequisites 📋
 
@@ -120,59 +124,69 @@ You should see:
 
 ### Using the Bot in Telegram
 
-1. **Start the bot**:
-   - Open Telegram and find your bot
-   - Send `/start` to see the welcome message
-
-2. **Search for a hashtag**:
+1. **Discover trending topics**:
    ```
-   /search #ایران
+   /trending python
    ```
-   - Bot will display top 10 posts with engagement metrics
-   - Posts are ranked by total engagement (likes + retweets + replies)
+   - Bot fetches top 10 trending posts about Python from Reddit
+   - Each post shown as a separate message with full text
+   - Posts numbered 1-10 for easy selection
 
-3. **Generate AI proposal**:
+2. **Research a specific topic**:
+   ```
+   /research 3
+   ```
+   - LLM researches post #3 on the web using DuckDuckGo
+   - Returns 5 top sources with summaries
+   - All results in English
+
+3. **Generate AI post**:
    ```
    /propose
    ```
-   - Bot analyzes the top posts
-   - Generates a culturally relevant Farsi post
-   - Shows character count and preview
+   - LLM analyzes research results
+   - Generates an engaging X post (max 280 characters)
+   - Shows preview and character count
 
 4. **Approve and post**:
    ```
    /approve
    ```
-   - Posts the AI-generated content to your X account
-   - Provides a link to view the posted tweet
-
-5. **Cancel operation**:
-   ```
-   /cancel
-   ```
-   - Discards the current proposal
 
 ## Commands Reference 📚
 
 | Command | Description | Example |
 |---------|-------------|---------|
 | `/start` | Show welcome message and instructions | `/start` |
-| `/search <hashtag>` | Search hashtag and show top 10 posts | `/search #تهران` |
-| `/propose` | Generate AI post based on last search | `/propose` |
+| `/trending <topic>` | Find top 10 trending posts about a topic | `/trending python` |
+| `/research <number>` | Research a specific post from trending results | `/research 3` |
+| `/propose` | Generate AI post based on research | `/propose` |
 | `/approve` | Post the proposed content to X | `/approve` |
 | `/cancel` | Discard current proposal | `/cancel` |
 
 ## Workflow Example 🔄
 
 ```
-You: /search #ایران
-Bot: 📊 Top 10 Posts for #ایران
-     [Shows 10 posts with engagement metrics]
+You: /trending python
+Bot: � Top 10 Trending Posts: python
+     ━━━ Post #1 ━━━
+     [Full post text about Python]
+     👍 1,234 upvotes | 💬 56 comments
+     
+     ━━━ Post #2 ━━━
+     [Another Python post]
+     ...
+
+You: /research 3
+Bot: 🔬 Research: [Post #3 title]
+     1. TechCrunch: "Python dominates..."
+     2. Stack Overflow: "New Python features..."
+     ...
 
 You: /propose
-Bot: 🤖 AI-Generated Post Proposal
-     📝 [Generated Farsi content]
-     ✅ Use /approve to post this to X
+Bot: 🤖 AI-Generated X Post
+     📝 "Python continues to dominate in 2024..."
+     📏 Length: 156 characters
 
 You: /approve
 Bot: ✅ Successfully posted to X!
@@ -215,11 +229,14 @@ Bot: ✅ Successfully posted to X!
 ```
 Telgram_X_Bot/
 ├── bot.py                  # Main Telegram bot application
-├── x_client.py            # X API client for searching and posting
+├── reddit_client.py        # Reddit API client for trending topics
+├── research_client.py      # DuckDuckGo web research client
+├── x_client.py            # X API client for posting tweets
 ├── content_generator.py   # Ollama-based AI content generation
 ├── models.py              # Data models (Post, ProposedPost, BotState)
 ├── config.py              # Configuration management
 ├── requirements.txt       # Python dependencies
+├── workflow.png           # Workflow flowchart
 ├── .env.example          # Environment variables template
 ├── .env                  # Your credentials (not in git)
 ├── .gitignore           # Git ignore file
@@ -251,4 +268,4 @@ If you encounter issues:
 
 ---
 
-**Made with ❤️ for the Persian/Farsi community**
+**Made with ❤️ **

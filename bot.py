@@ -71,7 +71,7 @@ This bot helps you discover trending topics, research them, and create AI-powere
 
 **Workflow:**
 
-1️⃣ `/trending` - Discover top 10 trending topics on Reddit
+1️⃣ `/trending python` - Find top 10 trending posts about Python on Reddit
 
 2️⃣ `/research 3` - Research topic #3 on the web (LLM does deep research)
 
@@ -89,62 +89,96 @@ Let's discover what's trending! 🚀
 
 
 async def trending_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /trending command to show trending topics."""
+    """Handle /trending command to show trending topics for a specific subject."""
     user_id = update.effective_user.id
     
     if not is_authorized_user(user_id):
         await update.message.reply_text("❌ Unauthorized.")
         return
     
+    # Get topic from command arguments
+    if not context.args:
+        await update.message.reply_text(
+            "❌ Please provide a topic.\\n"
+            "Usage: `/trending python`\\n"
+            "Example: `/trending ai`",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return
+    
+    topic = ' '.join(context.args)
+    
     # Send "fetching" message
     status_msg = await update.message.reply_text(
-        "🔥 Fetching trending topics from Reddit...\\n"
+        f"🔥 Finding top 10 trending posts about '{topic}' on Reddit...\\n"
         "This may take a moment..."
     )
     
     try:
-        # Fetch trending topics
-        topics = reddit_client.get_trending_topics(limit=10)
+        # Fetch top posts for the topic
+        posts = reddit_client.get_top_posts(topic, limit=10)
         
-        if not topics:
+        if not posts:
             await status_msg.edit_text(
-                "❌ No trending topics found.\\n"
-                "Please try again later."
+                f"❌ No trending posts found for '{topic}'.\\n"
+                "Try a different topic or check spelling."
             )
             return
+        
+        # Convert posts to topic format for consistency
+        topics = []
+        for post in posts[:10]:  # Limit to exactly 10 posts
+            topics.append({
+                'title': post.text,
+                'subreddit': 'various',
+                'score': post.likes,
+                'comments': post.replies,
+                'url': post.url,
+                'id': post.id
+            })
         
         # Store topics in bot state
         bot_state.set_trending_topics(topics)
         
-        # Format results for display
-        results_message = "🔥 **Top 10 Trending Topics on Reddit**\\n\\n"
+        # Delete status message
+        await status_msg.delete()
         
-        for i, topic in enumerate(topics, 1):
-            title = topic['title'][:100] + "..." if len(topic['title']) > 100 else topic['title']
-            results_message += (
-                f"**{i}. {title}**\\n"
-                f"📂 r/{topic['subreddit']} | 👍 {topic['score']:,} | 💬 {topic['comments']}\\n\\n"
+        # Send header message
+        header_msg = f"🔥 **Top 10 Trending Posts: {topic}**\n\n"
+        await update.message.reply_text(header_msg, parse_mode=ParseMode.MARKDOWN)
+        
+        # Send each post as a separate message
+        for i, topic_item in enumerate(topics, 1):
+            # Escape special Markdown characters to avoid parsing errors
+            text = topic_item['title']
+            # Escape Markdown special characters
+            for char in ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']:
+                text = text.replace(char, f'\\{char}')
+            
+            post_message = (
+                f"**━━━ Post #{i} ━━━**\n"
+                f"{text}\n\n"
+                f"👍 {topic_item['score']:,} upvotes | 💬 {topic_item['comments']} comments"
+            )
+            await update.message.reply_text(
+                post_message,
+                parse_mode=ParseMode.MARKDOWN,
+                disable_web_page_preview=True
             )
         
-        results_message += (
-            "━━━━━━━━━━━━━━━━━━━━\\n"
-            f"✅ Found {len(topics)} trending topics\\n\\n"
-            "💡 Use `/research 3` to research topic #3!"
+        # Send footer message
+        footer_msg = (
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            f"✅ Found {len(topics)} trending posts\n\n"
+            "💡 Use `/research 3` to research post #3!"
         )
-        
-        # Delete status message and send results
-        await status_msg.delete()
-        await update.message.reply_text(
-            results_message,
-            parse_mode=ParseMode.MARKDOWN,
-            disable_web_page_preview=True
-        )
+        await update.message.reply_text(footer_msg, parse_mode=ParseMode.MARKDOWN)
         
     except Exception as e:
         logger.error(f"Error in trending_command: {e}")
         await status_msg.edit_text(
-            f"❌ Error fetching trending topics: {str(e)}\\n\\n"
-            "Please try again later."
+            f"❌ Error fetching trending posts: {str(e)}\\n\\n"
+            "Please try again with a different topic."
         )
 
 

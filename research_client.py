@@ -30,9 +30,13 @@ class ResearchClient:
         try:
             print(f"🔍 Researching: {topic}")
             
-            # Perform search using DuckDuckGo
+            # Perform search using DuckDuckGo with English region
             results = []
-            search_results = self.ddgs.text(topic, max_results=max_results)
+            search_results = self.ddgs.text(
+                topic, 
+                max_results=max_results,
+                region='us-en'  # Force English results from US region
+            )
             
             for result in search_results:
                 results.append({
